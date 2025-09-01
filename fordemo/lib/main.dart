@@ -1,122 +1,366 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
-void main() {
-  runApp(const MyApp());
-}
+void main() => runApp(MyApp());
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      home: HomePage(),
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        primarySwatch: Colors.indigo,
+        inputDecorationTheme: InputDecorationTheme(
+          border: OutlineInputBorder(),
+        ),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
+class HomePage extends StatefulWidget {
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  _HomePageState createState() => _HomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _HomePageState extends State<HomePage> {
+  String initialText = "Loading...";
+  final TextEditingController _usernameController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _updateUsernameController = TextEditingController();
+  
+  Map<String, dynamic>? postResponse;
+  Map<String, dynamic>? getResponse;
+  String? updateMessage;
+  List<dynamic>? allUsers;
+  String? userCode;
+  String? userId;
+  
+  bool showInitial = true;
+  bool showPost = false;
+  bool showGet = false;
+  bool showUpdate = false;
+  bool showAllUsers = false;
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
+  final String baseUrl = "https://fordemo-ot4j.onrender.com";
+
+  @override
+  void initState() {
+    super.initState();
+    fetchInitialData();
+  }
+
+  Future<void> fetchInitialData() async {
+    try {
+      final response = await http.get(Uri.parse(baseUrl)).timeout(Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        setState(() {
+          initialText = response.body.trim();
+        });
+      } else {
+        setState(() {
+          initialText = "Error: ${response.statusCode}";
+        });
+      }
+    } catch (e) {
+      setState(() {
+        initialText = "Failed to load: $e";
+      });
+    }
+  }
+
+  Future<void> postUser() async {
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUrl/users"),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'username': _usernameController.text,
+          'password': _passwordController.text,
+        }),
+      );
+      
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = json.decode(response.body);
+        setState(() {
+          postResponse = data;
+          userCode = data['code']?.toString();
+          showInitial = false;
+          showPost = true;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        postResponse = {'message': 'Failed to post: $e'};
+        showInitial = false;
+        showPost = true;
+      });
+    }
+  }
+
+  Future<void> getUserByCode() async {
+    if (userCode == null) return;
+    
+    try {
+      final response = await http.get(Uri.parse("$baseUrl/users/$userCode"));
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() {
+          getResponse = data;
+          userId = data['id']?.toString();
+          showPost = false;
+          showGet = true;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        getResponse = {'message': 'Failed to get user: $e'};
+        showPost = false;
+        showGet = true;
+      });
+    }
+  }
+
+  Future<void> updateUsername() async {
+    if (userId == null) return;
+    
+    try {
+      final response = await http.patch(
+        Uri.parse("$baseUrl/users/$userId"),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'username': _updateUsernameController.text,
+        }),
+      );
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() {
+          updateMessage = data['message'];
+          showGet = false;
+          showUpdate = true;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        updateMessage = 'Failed to update: $e';
+        showGet = false;
+        showUpdate = true;
+      });
+    }
+  }
+
+  Future<void> getAllUsers() async {
+    try {
+      final response = await http.get(Uri.parse("$baseUrl/users"));
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() {
+          allUsers = data['users'];
+          showUpdate = false;
+          showAllUsers = true;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        allUsers = [];
+        showUpdate = false;
+        showAllUsers = true;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+      appBar: AppBar(title: Text("PT03")),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            children: [
+              if (showInitial) _buildInitialView(),
+              if (showPost) _buildPostView(),
+              if (showGet) _buildGetView(),
+              if (showUpdate) _buildUpdateView(),
+              if (showAllUsers) _buildAllUsersView(),
+            ],
+          ),
+        ),
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
+    );
+  }
+
+  Widget _buildInitialView() {
+    return Column(
+      children: [
+        Card(
+          elevation: 4,
+          margin: EdgeInsets.symmetric(vertical: 20),
+          child: Padding(
+            padding: const EdgeInsets.all(32.0),
+            child: Text(
+              initialText,
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w500,
+                color: Colors.indigo[900],
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+        SizedBox(height: 20),
+        TextField(
+          controller: _usernameController,
+          decoration: InputDecoration(
+            labelText: "Username",
+            prefixIcon: Icon(Icons.person),
+          ),
+        ),
+        SizedBox(height: 16),
+        TextField(
+          controller: _passwordController,
+          decoration: InputDecoration(
+            labelText: "Password",
+            prefixIcon: Icon(Icons.lock),
+          ),
+          obscureText: true,
+        ),
+        SizedBox(height: 20),
+        ElevatedButton(
+          onPressed: postUser,
+          child: Text("Enter"),
+          style: ElevatedButton.styleFrom(
+            minimumSize: Size(double.infinity, 50),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPostView() {
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: EdgeInsets.all(16),
         child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Post Response:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            SizedBox(height: 10),
+            Text("Message: ${postResponse?['message'] ?? 'N/A'}"),
+            Row(
+              children: [
+                Text("Code: ${postResponse?['code'] ?? 'N/A'}"),
+                SizedBox(width: 10),
+                ElevatedButton(
+                  onPressed: getUserByCode,
+                  child: Text("Get User"),
+                ),
+              ],
+            ),
+            Text("ID: ${postResponse?['id'] ?? 'N/A'}"),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGetView() {
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Get Response:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            SizedBox(height: 10),
+            Text("Message: ${getResponse?['message'] ?? 'N/A'}"),
+            Text("ID: ${getResponse?['id'] ?? 'N/A'}"),
+            SizedBox(height: 20),
+            TextField(
+              controller: _updateUsernameController,
+              decoration: InputDecoration(
+                labelText: "New Username",
+                prefixIcon: Icon(Icons.edit),
+              ),
+            ),
+            SizedBox(height: 10),
+            ElevatedButton(
+              onPressed: updateUsername,
+              child: Text("Update Username"),
+              style: ElevatedButton.styleFrom(
+                minimumSize: Size(double.infinity, 40),
+              ),
             ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
+    );
+  }
+
+  Widget _buildUpdateView() {
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Update Response:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            SizedBox(height: 10),
+            Text("Message: ${updateMessage ?? 'N/A'}"),
+            SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: getAllUsers,
+              child: Text("Get All Users"),
+              style: ElevatedButton.styleFrom(
+                minimumSize: Size(double.infinity, 40),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAllUsersView() {
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("First 5 Users:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            SizedBox(height: 10),
+            if (allUsers != null && allUsers!.isNotEmpty)
+            ...allUsers!.take(5).map((user) => Card(
+              margin: EdgeInsets.symmetric(vertical: 4),
+              child: Padding(
+                padding: EdgeInsets.all(8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("ID: ${user['id'] ?? 'N/A'}"),
+                    Text("Code: ${user['code'] ?? 'N/A'}"),
+                    Text("Username: ${user['username'] ?? 'N/A'}"),
+                    Text("Number5: ${user['number5'] ?? 'N/A'}"),
+                    Text("__v: ${user['__v'] ?? 'N/A'}"),
+                  ],
+                ),
+              ),
+            )).toList()
+            else
+              Text("No users found"),
+          ],
+        ),
+      ),
     );
   }
 }
